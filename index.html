@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plan de Entrenamiento Interactivo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, where, addDoc, onSnapshot, serverTimestamp, doc, deleteDoc, updateDoc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        window.firebase = {
+            initializeApp,
+            getAuth,
+            signInAnonymously,
+            signInWithCustomToken,
+            onAuthStateChanged,
+            getFirestore,
+            collection,
+            query,
+            where,
+            addDoc,
+            onSnapshot,
+            serverTimestamp,
+            doc,
+            deleteDoc,
+            updateDoc,
+            setDoc,
+            getDoc
+        };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f5f5f4; /* stone-100 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 300px;
+        }
+        .day-button.active {
+            background-color: #0d9488; /* teal-600 */
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .day-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .ai-button {
+            cursor: pointer;
+            transition: transform 0.2s;
+            font-size: 1.2rem;
+            color: #0d9488;
+        }
+        .ai-button:hover {
+            transform: scale(1.1);
+        }
+        .youtube-button {
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: #ef4444; /* red-500 */
+        }
+        .youtube-button:hover {
+            transform: scale(1.1);
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .calendar-day {
+            text-align: center;
+            padding: 8px 4px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background-color 0.2s;
+        }
+        .calendar-day:hover {
+            background-color: #e0f2f1;
+        }
+        .calendar-day.current-month {
+            background-color: #f0fdf4;
+        }
+        .calendar-day.current-month.has-workout {
+            background-color: #0d9488;
+            color: white;
+            font-weight: bold;
+        }
+        .calendar-day.current-month.has-workout:hover {
+            background-color: #0f766e;
+        }
+        .calendar-day.out-of-month {
+            color: #d1d5db; /* gray-300 */
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            width: 90%;
+            max-width: 400px;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: #000;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .draggable-item {
+            cursor: grab;
+        }
+        .tab-button {
+            @apply py-1.5 px-3 text-sm font-semibold rounded-lg shadow-sm transition bg-white text-teal-700 hover:bg-teal-50;
+        }
+        .tab-button.active {
+            @apply bg-teal-600 text-white hover:bg-teal-700;
+        }
+    </style>
+</head>
+<body class="text-stone-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-teal-800">Plan de Entrenamiento</h1>
+            <p class="text-stone-600 mt-2">Tu guía interactiva para el fitness</p>
+        </header>
+
+        <nav class="mb-8">
+            <div id="main-navigation" class="flex flex-wrap justify-center gap-2 md:gap-4">
+                <button id="plan-tab-btn" class="tab-button active">Plan</button>
+                <button id="history-tab-btn" class="tab-button">Historial</button>
+                <button id="upload-tab-btn" class="tab-button">Cargar CSV</button>
+            </div>
+        </nav>
+
+        <main>
+            <div id="workout-display" class="fade-in">
+                <!-- Workout details will be injected here -->
+            </div>
+            <div id="training-history" class="hidden fade-in">
+                <!-- Training history will be injected here -->
+            </div>
+            <div id="upload-csv-display" class="hidden fade-in">
+                <!-- Upload CSV content will be injected here -->
+            </div>
+            <div id="edit-plan-display" class="hidden fade-in">
+                <!-- Edit plan details will be injected here -->
+            </div>
+        </main>
+
+    </div>
+    
+    <!-- Edit Date Modal -->
+    <div id="editDateModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h3 class="text-xl font-bold text-teal-800 mb-4">Editar Fecha de Registro</h3>
+            <p class="text-stone-600 mb-4">Selecciona la nueva fecha para este registro.</p>
+            <input type="date" id="newDateInput" class="w-full p-2 mb-4 border rounded-lg">
+            <div class="flex justify-end space-x-2">
+                <button id="cancelEditBtn" class="px-4 py-2 bg-stone-200 text-stone-700 rounded-lg hover:bg-stone-300">Cancelar</button>
+                <button id="saveEditBtn" class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Guardar</button>
+            </div>
+            <div id="edit-message" class="mt-4 text-center"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        const {
+            initializeApp,
+            getAuth,
+            signInAnonymously,
+            signInWithCustomToken,
+            onAuthStateChanged,
+            getFirestore,
+            collection,
+            query,
+            where,
+            addDoc,
+            onSnapshot,
+            serverTimestamp,
+            doc,
+            deleteDoc,
+            updateDoc,
+            setDoc,
+            getDoc
+        } = window.firebase;
+
+        let db, auth, userId;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        let logIdToEdit = null;
+        
+        // Datos de entrenamiento predefinidos
+        const initialWorkoutData = {
+            1: {
+                dayName: "Lunes",
+                title: "Pecho & Tríceps",
+                emphasis: "Énfasis en Pecho",
+                isRestDay: false,
+                exercises: [
+                    { name: "Press de Banca con Barra", sets: 4, reps: "8-10", youtubeUrl: "https://www.youtube.com/watch?v=0sa9x-FwY0c" },
+                    { name: "Press Inclinado con Mancuernas", sets: 3, reps: "10-12", youtubeUrl: "https://www.youtube.com/watch?v=k_lR7_0K_iU" },
+                    { name: "Aperturas en Máquina (Pec-Deck)", sets: 3, reps: "12-15", youtubeUrl: "https://www.youtube.com/watch?v=p4v57h9c4qI" },
+                    { name: "Extensiones en Polea con Cuerda", sets: 3, reps: "12-15", youtubeUrl: "https://www.youtube.com/watch?v=gSgLpGk8A7U" },
+                    { name: "Fondos en Paralelas", sets: 3, reps: "hasta el fallo", youtubeUrl: "https://www.youtube.com/watch?v=Wp8C5lq5i60" },
+                    { name: "Plancha (Plank)", sets: 3, reps: "máximo tiempo", youtubeUrl: "https://www.youtube.com/watch?v=T_T59Yg8o20" }
+                ]
+            },
+            2: {
+                dayName: "Martes",
+                title: "Espalda & Bíceps",
+                emphasis: "Énfasis en Bíceps",
+                isRestDay: false,
+                exercises: [
+                    { name: "Dominadas", sets: 3, reps: "6-8", youtubeUrl: "https://www.youtube.com/watch?v=eGo8y3hWc-k" },
+                    { name: "Remo con Barra (Pendlay Row)", sets: 3, reps: "8-10", youtubeUrl: "https://www.youtube.com/watch?v=gA_b7B2nQWw" },
+                    { name: "Jalón al Pecho en Máquina", sets: 3, reps: "10-12", youtubeUrl: "https://www.youtube.com/watch?v=2W40u5q33W4" },
+                    { name: "Curl con Barra (EZ-Bar Curl)", sets: 4, reps: "8-10", youtubeUrl: "https://www.youtube.com/watch?v=f7Bf0j2oPjA" },
+                    { name: "Curl de Martillo con Mancuernas", sets: 3, reps: "10-12", youtubeUrl: "https://www.youtube.com/watch?v=n-W2N7l8QWs" },
+                    { name: "Curl Concentrado (Dumbbell Concentration Curl)", sets: 3, reps: "12-15", youtubeUrl: "https://www.youtube.com/watch?v=J8a78zWk4o0" },
+                    { name: "Elevación de Piernas Colgado", sets: 3, reps: "hasta el fallo", youtubeUrl: "https://www.youtube.com/watch?v=0R1-Bq4U6oI" }
+                ]
+            },
+            3: {
+                dayName: "Miércoles",
+                title: "Descanso Completo",
+                emphasis: "Recuperación Activa",
+                isRestDay: true,
+                exercises: []
+            },
+            4: {
+                dayName: "Jueves",
+                title: "Pecho & Espalda",
+                emphasis: "Fuerza y Densidad",
+                isRestDay: false,
+                exercises: [
+                    { name: "Press Inclinado con Barra", sets: 3, reps: "8-10", youtubeUrl: "https://www.youtube.com/watch?v=S_o9K1l1mNM" },
+                    { name: "Fondos en Paralelas", sets: 3, reps: "hasta el fallo", youtubeUrl: "https://www.youtube.com/watch?v=Wp8C5lq5i60" },
+                    { name: "Peso Muerto (Deadlift)", sets: 3, reps: "6-8", youtubeUrl: "https://www.youtube.com/watch?v=V9L63fF1Fek" },
+                    { name: "Remo en Máquina (Cable Row)", sets: 3, reps: "10-12", youtubeUrl: "https://www.youtube.com/watch?v=vV95oI4z2l4" },
+                    { name: "Russian Twist con peso", sets: 3, reps: "15-20", youtubeUrl: "https://www.youtube.com/watch?v=skjJ8L2-tVw" }
+                ]
+            },
+            5: {
+                dayName: "Viernes",
+                title: "Brazos & Hombros",
+                emphasis: "Volumen y Definición",
+                isRestDay: false,
+                exercises: [
+                    { name: "Curl Predicador", sets: 3, reps: "10-12", youtubeUrl: "https://www.youtube.com/watch?v=Yf4p9FhC28c" },
+                    { name: "Curl en Banco Inclinado con Mancuernas", sets: 3, reps: "12-15", youtubeUrl: "https://www.youtube.com/watch?v=n_vMhLzJ558" },
+                    { name: "Press Francés con Barra EZ", sets: 3, reps: "10-12", youtubeUrl: "https://www.youtube.com/watch?v=LqN684o1w68" },
+                    { name: "Extensión de Tríceps sobre la Cabeza con Mancuerna", sets: 3, reps: "12-15", youtubeUrl: "https://www.youtube.com/watch?v=3K03Jz_Rz3U" },
+                    { name: "Press de Hombros Sentado con Mancuernas", sets: 3, reps: "8-10", youtubeUrl: "https://www.youtube.com/watch?v=L2GjHhL-K_U" },
+                    { name: "Elevaciones Laterales con Mancuernas", sets: 3, reps: "12-15", youtubeUrl: "https://www.youtube.com/watch?v=mD00z95aH1E" },
+                    { name: "Crunch en Polea Alta", sets: 3, reps: "15-20", youtubeUrl: "https://www.youtube.com/watch?v=p4v57h9c4qI" }
+                ]
+            },
+            6: {
+                dayName: "Sábado",
+                title: "Descanso Completo",
+                emphasis: "Recuperación",
+                isRestDay: true,
+                exercises: []
+            },
+            7: {
+                dayName: "Domingo",
+                title: "Descanso Completo",
+                emphasis: "Preparación Semanal",
+                isRestDay: true,
+                exercises: []
+            }
+        };
+
+        let workoutData = {}; // This will hold the data from Firestore
+        let tempWorkoutData = {}; // Temporary data for edits
+        
+        const mainNavigation = document.getElementById('main-navigation');
+        const workoutDisplay = document.getElementById('workout-display');
+        const trainingHistoryDisplay = document.getElementById('training-history');
+        const editPlanDisplay = document.getElementById('edit-plan-display');
+        const uploadCsvDisplay = document.getElementById('upload-csv-display');
+        const editDateModal = document.getElementById('editDateModal');
+        const newDateInput = document.getElementById('newDateInput');
+        const saveEditBtn = document.getElementById('saveEditBtn');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
+        const closeModalBtn = document.querySelector('.close-button');
+        
+        let currentDayId = new Date().getDay();
+        if (currentDayId === 0) { currentDayId = 7; } 
+        let progressChart;
+        let allLogs = [];
+
+        async function initializeFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                if (authToken) {
+                    await signInWithCustomToken(auth, authToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        // Listen for workout plan changes
+                        const planDocRef = doc(db, `artifacts/${appId}/users/${userId}/workout_plan/data`);
+                        onSnapshot(planDocRef, (docSnap) => {
+                            if (docSnap.exists() && docSnap.data().plan) {
+                                Object.assign(workoutData, docSnap.data().plan);
+                                Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(workoutData)));
+                            } else {
+                                // Initialize with default data if not found
+                                Object.assign(workoutData, initialWorkoutData);
+                                Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(initialWorkoutData)));
+                                setDoc(planDocRef, { plan: initialWorkoutData }, { merge: true });
+                            }
+                            initializeAppComponents();
+                        }, (error) => {
+                            console.error("Error fetching workout plan:", error);
+                            Object.assign(workoutData, initialWorkoutData);
+                            Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(initialWorkoutData)));
+                            initializeAppComponents();
+                        });
+                    } else {
+                        userId = null;
+                        Object.assign(workoutData, initialWorkoutData);
+                        Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(initialWorkoutData)));
+                        initializeAppComponents();
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                Object.assign(workoutData, initialWorkoutData);
+                Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(initialWorkoutData)));
+                initializeAppComponents();
+            }
+        }
+
+        /**
+         * Llama a la API de Gemini con un prompt dado para generar texto.
+         * Incluye reintentos con backoff exponencial.
+         * @param {string} prompt - El prompt de texto para la API.
+         * @param {number} retries - Número de reintentos.
+         * @param {number} delay - Retraso inicial en ms.
+         * @returns {Promise<string>} - El texto generado o un mensaje de error.
+         */
+        async function callGeminiAPI(prompt, retries = 3, delay = 1000) {
+            try {
+                const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = ""
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API response error: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    return "No se pudo generar una respuesta. Inténtalo de nuevo más tarde.";
+                }
+            } catch (error) {
+                if (retries > 0) {
+                    await new Promise(res => setTimeout(res, delay));
+                    return callGeminiAPI(prompt, retries - 1, delay * 2);
+                } else {
+                    return "Error al conectar con la API. Por favor, revisa tu conexión.";
+                }
+            }
+        }
+
+        /**
+         * Genera una idea de comida rica en proteínas usando la API de Gemini.
+         */
+        async function generateMealIdea() {
+            const button = document.getElementById('meal-gen-button');
+            const outputDiv = document.getElementById('meal-output');
+            button.disabled = true;
+            outputDiv.innerHTML = `<p class="text-teal-600 font-semibold text-center mt-4">Generando una idea de comida... <span class="animate-pulse">● ● ●</span></p>`;
+
+            const prompt = "Actúa como un nutricionista. Crea una receta simple (título, ingredientes y preparación) rica en proteínas, ideal para la ganancia de masa muscular. Utiliza un tono motivador y claro. El formato debe ser: Título, lista de ingredientes, y pasos de preparación.";
+            const response = await callGeminiAPI(prompt);
+            
+            outputDiv.innerHTML = `<div class="p-4 bg-teal-50 rounded-lg border border-teal-200 mt-4">${response.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')}</div>`;
+            button.disabled = false;
+        }
+
+        /**
+         * Obtiene y muestra una explicación detallada de un ejercicio usando la API de Gemini.
+         * Ahora incluye un emoji visual.
+         * @param {string} exerciseName - El nombre del ejercicio a explicar.
+         */
+        async function getExerciseExplanation(exerciseName) {
+            const workoutCard = document.querySelector('.lg\\:col-span-2');
+            let explainerDiv = document.getElementById('exercise-explainer');
+            if (!explainerDiv) {
+                explainerDiv = document.createElement('div');
+                explainerDiv.id = 'exercise-explainer';
+                explainerDiv.className = 'mt-6 p-4 bg-teal-50 rounded-xl shadow-inner border border-teal-200 fade-in';
+                workoutCard.appendChild(explainerDiv);
+            }
+
+            explainerDiv.innerHTML = `<p class="text-teal-600 font-semibold text-center">Buscando explicación para ${exerciseName}... <span class="animate-pulse">⏳</span></p>`;
+            
+            // Nuevo prompt que pide un emoji al final
+            const textPrompt = `Actúa como un entrenador personal. Proporciona una explicación detallada del ejercicio "${exerciseName}". Incluye: 1. Qué músculos trabaja. 2. La técnica correcta paso a paso. 3. Un consejo de forma para evitar lesiones. El texto debe ser claro y conciso. Al final, después de una nueva línea, escribe solo un emoji que represente el ejercicio sin ningún otro texto.`;
+            const rawResponse = await callGeminiAPI(textPrompt);
+
+            // Separar el emoji del texto
+            const [textResponse, emoji] = rawResponse.split('\n').filter(Boolean);
+
+            explainerDiv.innerHTML = `
+                <div class="flex items-center space-x-3 mb-2">
+                    <span class="text-4xl leading-none">${emoji || ''}</span>
+                    <h4 class="font-bold text-teal-800 text-lg">Detalle del Ejercicio: ${exerciseName}</h4>
+                </div>
+                <div class="text-sm text-stone-700">${textResponse.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')}</div>
+            `;
+        }
+
+        /**
+         * Configura los listeners de eventos para los nuevos botones de IA.
+         */
+        function setupExerciseListeners() {
+            document.querySelectorAll('.ai-button').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const exerciseName = event.target.closest('li').dataset.exercise;
+                    getExerciseExplanation(exerciseName);
+                });
+            });
+
+            document.querySelectorAll('.youtube-button').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const youtubeUrl = event.target.closest('a').href;
+                    if (youtubeUrl) {
+                        window.open(youtubeUrl, '_blank');
+                    }
+                });
+            });
+        }
+
+        async function saveWorkoutLog(dayId, formData) {
+            if (!db || !userId) {
+                console.error("Database or user ID not available.");
+                return;
+            }
+
+            for (const exercise of formData) {
+                if (parseInt(exercise.reps) < 0 || parseFloat(exercise.weight) < 0) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.textContent = "Error: No se pueden guardar valores negativos.";
+                    messageDiv.className = "bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4";
+                    document.getElementById('save-log-button').parentNode.appendChild(messageDiv);
+                    setTimeout(() => messageDiv.remove(), 3000);
+                    return;
+                }
+            }
+            
+            const logsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/workout_logs`);
+            
+            try {
+                await addDoc(logsCollectionRef, {
+                    dayId: dayId,
+                    date: serverTimestamp(),
+                    exercises: formData.map(ex => ({
+                        name: ex.name,
+                        sets: parseInt(ex.sets) || 0,
+                        reps: parseInt(ex.reps) || 0,
+                        weight: parseFloat(ex.weight) || 0
+                    }))
+                });
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = "¡Registro guardado con éxito!";
+                messageDiv.className = "bg-teal-100 border border-teal-400 text-teal-700 px-4 py-3 rounded relative mt-4";
+                document.getElementById('save-log-button').parentNode.appendChild(messageDiv);
+                setTimeout(() => messageDiv.remove(), 3000);
+
+            } catch (error) {
+                console.error("Error saving workout log:", error);
+            }
+        }
+        
+        function updateChart(loggedDays) {
+            const trainingDaysCount = Object.values(workoutData).filter(d => !d.isRestDay).length;
+            const loggedCount = loggedDays.size;
+            const pendingCount = trainingDaysCount - loggedCount;
+            
+            if (progressChart) {
+                progressChart.destroy();
+            }
+
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            progressChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Días Completados', 'Días Pendientes'],
+                    datasets: [{
+                        data: [loggedCount, pendingCount],
+                        backgroundColor: ['#0d9488', '#f0f0f0'],
+                        borderColor: ['#ffffff', '#ffffff'],
+                        borderWidth: 4,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            enabled: true,
+                        }
+                    }
+                }
+            });
+        }
+        
+        function displayTab(tabName) {
+            // Hide all content divs
+            workoutDisplay.classList.add('hidden');
+            trainingHistoryDisplay.classList.add('hidden');
+            editPlanDisplay.classList.add('hidden');
+            uploadCsvDisplay.classList.add('hidden');
+
+            // Deactivate all tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+
+            // Show the selected tab and activate its button
+            if (tabName === 'plan') {
+                workoutDisplay.classList.remove('hidden');
+                document.getElementById('plan-tab-btn').classList.add('active');
+            } else if (tabName === 'history') {
+                trainingHistoryDisplay.classList.remove('hidden');
+                document.getElementById('history-tab-btn').classList.add('active');
+                displayTrainingHistory();
+            } else if (tabName === 'upload') {
+                uploadCsvDisplay.classList.remove('hidden');
+                document.getElementById('upload-tab-btn').classList.add('active');
+                displayUploadCSV();
+            }
+        }
+
+        function displayTrainingHistory() {
+            trainingHistoryDisplay.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold text-teal-800 mb-4">Historial de Entrenamientos</h2>
+                    <div id="calendar-container" class="mb-6"></div>
+                    <div id="log-details-container"></div>
+                    <div class="mt-6 text-center">
+                        <button id="export-btn" class="px-6 py-2 bg-teal-600 text-white rounded-lg shadow-lg hover:bg-teal-700 transition">Exportar a CSV</button>
+                    </div>
+                    <div id="export-message" class="mt-4 text-center"></div>
+                </div>
+            `;
+            
+            document.getElementById('export-btn').addEventListener('click', exportToCsv);
+            renderCalendar();
+            renderInitialHistoryDetails();
+        }
+
+        function displayUploadCSV() {
+            uploadCsvDisplay.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow-md flex flex-col items-center">
+                    <h2 class="text-2xl font-bold text-teal-800 mb-4">Cargar Plan de Entrenamiento desde CSV</h2>
+                    <p class="text-stone-600 text-center mb-4">
+                        Asegúrate de que tu archivo CSV tenga las siguientes columnas (en este orden): <br/>
+                        <code class="bg-gray-200 px-2 py-1 rounded-md text-sm font-mono">
+                            Dia, Ejercicio, Series, Repeticiones, Url_Youtube
+                        </code>
+                    </p>
+                    <input type="file" id="csv-file-input" accept=".csv" class="mb-4 text-center text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 cursor-pointer transition-colors duration-300" />
+                    <div id="upload-message" class="mt-4 text-center text-sm font-semibold"></div>
+                </div>
+            `;
+            document.getElementById('csv-file-input').addEventListener('change', handleFileUpload);
+        }
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            const messageDiv = document.getElementById('upload-message');
+            if (!file) {
+                messageDiv.textContent = "Por favor, selecciona un archivo CSV.";
+                messageDiv.className = "bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative";
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const content = e.target.result;
+                try {
+                    const parsedData = parseCsv(content);
+                    const newWorkoutData = {};
+                    parsedData.forEach(row => {
+                        const dayName = row.Dia.trim();
+                        // Mapa de nombres de días a IDs de día
+                        const dayId = Object.keys(initialWorkoutData).find(key => initialWorkoutData[key].dayName.toLowerCase() === dayName.toLowerCase());
+                        if (dayId) {
+                            if (!newWorkoutData[dayId]) {
+                                newWorkoutData[dayId] = {
+                                    dayName: dayName,
+                                    title: `Plan para el ${dayName}`,
+                                    emphasis: "Cargado desde CSV",
+                                    isRestDay: false,
+                                    exercises: []
+                                };
+                            }
+                            newWorkoutData[dayId].exercises.push({
+                                name: row.Ejercicio,
+                                sets: row.Series,
+                                reps: row.Repeticiones,
+                                youtubeUrl: row.Url_Youtube
+                            });
+                        }
+                    });
+
+                    // Fusionar los datos del CSV con los datos temporales existentes.
+                    // Esto asegura que los días no presentes en el CSV se mantengan.
+                    const mergedWorkoutData = { ...tempWorkoutData };
+                    for (const dayId in newWorkoutData) {
+                        mergedWorkoutData[dayId] = newWorkoutData[dayId];
+                    }
+
+                    // Actualizar workoutData y guardar en Firestore
+                    Object.assign(workoutData, mergedWorkoutData);
+                    Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(mergedWorkoutData)));
+                    const planDocRef = doc(db, `artifacts/${appId}/users/${userId}/workout_plan/data`);
+                    await setDoc(planDocRef, { plan: mergedWorkoutData }, { merge: true });
+                    
+                    messageDiv.textContent = "¡Plan de entrenamiento cargado y guardado con éxito!";
+                    messageDiv.className = "bg-teal-100 border border-teal-400 text-teal-700 px-4 py-3 rounded relative";
+                    setTimeout(() => {
+                        messageDiv.textContent = '';
+                        displayTab('plan');
+                    }, 3000);
+                } catch (error) {
+                    messageDiv.textContent = `Error al procesar el archivo: ${error.message}`;
+                    messageDiv.className = "bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative";
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        /**
+         * Nueva función para parsear CSV que maneja campos con comillas y comas internas.
+         * Se ha corregido la lógica para que funcione con el formato del archivo adjunto.
+         */
+        function parseCsv(csvContent) {
+            const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (lines.length <= 1) {
+                throw new Error('El archivo CSV está vacío o solo contiene encabezados.');
+            }
+
+            const headersLine = lines[0];
+            const headers = headersLine.split(',').map(h => h.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+            
+            const requiredHeaders = ['Dia', 'Ejercicio', 'Series', 'Repeticiones', 'Url_Youtube'];
+            const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+
+            if (missingHeaders.length > 0) {
+                throw new Error(`Faltan los siguientes encabezados obligatorios: ${missingHeaders.join(', ')}`);
+            }
+
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i];
+                const row = {};
+                let inQuote = false;
+                let field = '';
+                let fieldIndex = 0;
+
+                for (let j = 0; j < line.length; j++) {
+                    const char = line[j];
+                    if (char === '"') {
+                        // Handle escaped quotes `""`
+                        if (inQuote && line[j + 1] === '"') {
+                            field += '"';
+                            j++;
+                        } else {
+                            inQuote = !inQuote;
+                        }
+                    } else if (char === ',' && !inQuote) {
+                        row[headers[fieldIndex]] = field.trim();
+                        field = '';
+                        fieldIndex++;
+                    } else {
+                        field += char;
+                    }
+                }
+                // Add the last field
+                row[headers[fieldIndex]] = field.trim();
+
+                if (Object.keys(row).length > 0) {
+                    data.push(row);
+                }
+            }
+            return data;
+        }
+
+        function renderCalendar() {
+            const calendarContainer = document.getElementById('calendar-container');
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 is Sunday, 1 is Monday
+
+            const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+            const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+            let calendarHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <button class="text-teal-600 font-bold" disabled>&#8249;</button>
+                    <h3 class="text-lg font-bold">${monthNames[month]} ${year}</h3>
+                    <button class="text-teal-600 font-bold" disabled>&#8250;</button>
+                </div>
+                <div class="calendar-grid font-semibold text-sm text-stone-500">
+                    ${dayNames.map(d => `<span>${d}</span>`).join('')}
+                </div>
+                <div class="calendar-grid text-sm">
+            `;
+            
+            for (let i = 0; i < firstDayOfWeek; i++) {
+                calendarHTML += `<div class="calendar-day out-of-month"></div>`;
+            }
+            
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                const dateStr = date.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/-/g, '/');
+                const hasWorkout = allLogs.some(log => log.date && log.date.toDate().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/-/g, '/') === dateStr);
+                const workoutClass = hasWorkout ? 'has-workout' : '';
+                calendarHTML += `<div class="calendar-day current-month ${workoutClass}" data-date="${dateStr}">${day}</div>`;
+            }
+
+            calendarHTML += `</div>`;
+            calendarContainer.innerHTML = calendarHTML;
+            
+            document.querySelectorAll('.calendar-day.current-month').forEach(dayEl => {
+                dayEl.addEventListener('click', (e) => {
+                    const selectedDate = e.target.dataset.date;
+                    const logsOnDate = allLogs.filter(log => log.date && log.date.toDate().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/-/g, '/') === selectedDate);
+                    renderLogDetails(logsOnDate, selectedDate);
+                });
+            });
+        }
+        
+        function renderInitialHistoryDetails() {
+            const logDetailsContainer = document.getElementById('log-details-container');
+            logDetailsContainer.innerHTML = `<p class="text-stone-500 text-center mt-4">Haz clic en una fecha en el calendario para ver los registros.</p>`;
+        }
+        
+        function renderLogDetails(logs, dateStr) {
+            const logDetailsContainer = document.getElementById('log-details-container');
+            if (logs.length === 0) {
+                logDetailsContainer.innerHTML = `<p class="text-stone-500 text-center mt-4">No hay registros de entrenamiento para el ${dateStr}.</p>`;
+                return;
+            }
+            
+            const detailsHTML = `
+                <h3 class="text-xl font-bold text-teal-800 mb-4 mt-6">Registros para el ${dateStr}</h3>
+                <div class="space-y-4">
+                    ${logs.map(log => {
+                        const time = log.date.toDate().toLocaleTimeString("es-ES");
+                        const exercises = log.exercises.map(ex => `
+                            <li><b>${ex.name}:</b> ${ex.reps} reps, ${ex.weight} kg</li>
+                        `).join('');
+                        return `
+                            <div class="bg-stone-50 p-4 rounded-lg border border-stone-200 flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm font-semibold text-stone-600">Sesión a las ${time}</p>
+                                    <ul class="list-disc list-inside text-stone-700 mt-2">
+                                        ${exercises}
+                                    </ul>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button class="edit-date-btn text-blue-600 hover:text-blue-800 transition-colors" data-doc-id="${log.id}" aria-label="Editar fecha de registro">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                        </svg>
+                                    </button>
+                                    <button class="delete-log-btn text-red-600 hover:text-red-800 transition-colors" data-doc-id="${log.id}" aria-label="Eliminar registro">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            logDetailsContainer.innerHTML = detailsHTML;
+            
+            document.querySelectorAll('.delete-log-btn').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const docId = e.currentTarget.dataset.docId;
+                    if (!docId) return;
+                    const logRef = doc(db, `artifacts/${appId}/users/${userId}/workout_logs`, docId);
+                    try {
+                        await deleteDoc(logRef);
+                    } catch (error) {
+                        console.error("Error al eliminar el registro: ", error);
+                    }
+                });
+            });
+            
+            document.querySelectorAll('.edit-date-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const docId = e.currentTarget.dataset.docId;
+                    logIdToEdit = docId;
+                    editDateModal.style.display = 'flex';
+                    const log = allLogs.find(l => l.id === docId);
+                    if (log && log.date) {
+                        const date = log.date.toDate();
+                        const formattedDate = date.toISOString().split('T')[0];
+                        newDateInput.value = formattedDate;
+                    }
+                });
+            });
+        }
+        
+        cancelEditBtn.addEventListener('click', () => {
+            editDateModal.style.display = 'none';
+        });
+        closeModalBtn.addEventListener('click', () => {
+            editDateModal.style.display = 'none';
+        });
+        window.addEventListener('click', (event) => {
+            if (event.target === editDateModal) {
+                editDateModal.style.display = 'none';
+            }
+        });
+
+        saveEditBtn.addEventListener('click', async () => {
+            if (logIdToEdit && newDateInput.value) {
+                const newDate = new Date(newDateInput.value);
+                const logRef = doc(db, `artifacts/${appId}/users/${userId}/workout_logs`, logIdToEdit);
+                try {
+                    await updateDoc(logRef, { date: newDate });
+                    const messageDiv = document.getElementById('edit-message');
+                    messageDiv.textContent = "¡Fecha actualizada con éxito!";
+                    messageDiv.className = "bg-teal-100 border border-teal-400 text-teal-700 px-4 py-3 rounded relative mt-4";
+                    setTimeout(() => {
+                        messageDiv.remove();
+                        editDateModal.style.display = 'none';
+                    }, 2000);
+                } catch (error) {
+                    console.error("Error al actualizar la fecha: ", error);
+                    const messageDiv = document.getElementById('edit-message');
+                    messageDiv.textContent = "Error al actualizar la fecha. Por favor, inténtalo de nuevo.";
+                    messageDiv.className = "bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4";
+                    setTimeout(() => messageDiv.remove(), 3000);
+                }
+            }
+        });
+
+        function exportToCsv() {
+            const messageDiv = document.getElementById('export-message');
+            if (allLogs.length === 0) {
+                messageDiv.innerHTML = `<p class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">No hay datos para exportar.</p>`;
+                setTimeout(() => messageDiv.innerHTML = '', 3000);
+                return;
+            }
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Fecha,Día,Ejercicio,Series,Repeticiones,Peso (kg)\n";
+
+            allLogs.forEach(log => {
+                const date = log.date.toDate().toLocaleDateString("es-ES");
+                const dayName = workoutData[log.dayId].dayName;
+                log.exercises.forEach(ex => {
+                    const repsValue = ex.reps || 'N/A';
+                    const weightValue = ex.weight || 'N/A';
+                    csvContent += `${date},${dayName},"${ex.name}",${ex.sets},"${repsValue}","${weightValue}"\n`;
+                });
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "registros_entrenamiento.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            messageDiv.innerHTML = `<p class="bg-teal-100 border border-teal-400 text-teal-700 px-4 py-3 rounded relative">Archivo CSV exportado con éxito.</p>`;
+            setTimeout(() => messageDiv.innerHTML = '', 3000);
+        }
+        
+        // Nueva función para exportar el plan de entrenamiento completo a CSV
+        function exportPlanToCsv() {
+            const messageDiv = document.getElementById('plan-export-message');
+            if (Object.keys(workoutData).length === 0) {
+                messageDiv.innerHTML = `<p class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">No hay un plan para exportar.</p>`;
+                setTimeout(() => messageDiv.innerHTML = '', 3000);
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Dia,Ejercicio,Series,Repeticiones,Url_Youtube\n";
+
+            // Recorre cada día del plan
+            for (const dayId in workoutData) {
+                const dayData = workoutData[dayId];
+                if (!dayData.isRestDay && dayData.exercises) {
+                    // Recorre cada ejercicio de ese día
+                    dayData.exercises.forEach(ex => {
+                        const youtubeUrl = ex.youtubeUrl || '';
+                        csvContent += `"${dayData.dayName}","${ex.name}","${ex.sets}","${ex.reps}","${youtubeUrl}"\n`;
+                    });
+                }
+            }
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "plan_entrenamiento.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            messageDiv.innerHTML = `<p class="bg-teal-100 border border-teal-400 text-teal-700 px-4 py-3 rounded relative">Plan de entrenamiento exportado con éxito.</p>`;
+            setTimeout(() => messageDiv.innerHTML = '', 3000);
+        }
+
+        async function displayWorkout(dayId) {
+            // Hide all content divs except edit plan for now
+            trainingHistoryDisplay.classList.add('hidden');
+            editPlanDisplay.classList.add('hidden');
+            uploadCsvDisplay.classList.add('hidden');
+
+            // Find the day-button with the active class and remove it
+            document.querySelectorAll('#day-navigation .day-button').forEach(btn => btn.classList.remove('active'));
+            const activeDayBtn = document.querySelector(`#day-navigation [data-day-id="${dayId}"]`);
+            if (activeDayBtn) {
+                activeDayBtn.classList.add('active');
+            }
+
+            workoutDisplay.classList.remove('hidden');
+            
+            const dayData = workoutData[dayId];
+            if (!dayData) return;
+            
+            workoutDisplay.innerHTML = '';
+            workoutDisplay.classList.remove('fade-in');
+            void workoutDisplay.offsetWidth; 
+            workoutDisplay.classList.add('fade-in');
+            
+            let exercisesHTML = '';
+            if (!dayData.isRestDay) {
+                exercisesHTML = Object.values(dayData.exercises).map((ex, index) => `
+                    <div class="mb-4 flex items-center">
+                        <li data-exercise="${ex.name}">
+                            <b>${ex.name}:</b> ${ex.sets} series x ${ex.reps} reps 
+                            <span class="ai-button">✨</span>
+                            ${ex.youtubeUrl ? `<a href="${ex.youtubeUrl}" target="_blank" class="youtube-button ml-2 text-red-500 hover:text-red-700"><i class="fab fa-youtube"></i></a>` : ''}
+                        </li>
+                        <div class="flex items-center space-x-2 mt-2 ml-4">
+                            <input type="number" id="reps-${index}" placeholder="Reps" min="0" class="w-20 p-1 border rounded-md text-sm text-center">
+                            <input type="number" id="weight-${index}" placeholder="Kg" min="0" class="w-20 p-1 border rounded-md text-sm text-center">
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                exercisesHTML = `<div class="text-center"><p class="text-lg text-stone-600">${dayData.title}</p><p class="mt-2 text-stone-500">${dayData.emphasis}</p></div>`;
+            }
+
+            const cardHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-teal-800">${dayData.title}</h2>
+                            <button id="edit-plan-btn" class="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition">Modificar Plan</button>
+                        </div>
+                        <p class="text-stone-500 mb-6">${dayData.emphasis}</p>
+                        ${dayData.isRestDay ? exercisesHTML : `
+                        <div class="space-y-4">
+                            <ul class="list-disc list-inside text-stone-700 mt-2 space-y-1">
+                                ${exercisesHTML}
+                            </ul>
+                        </div>
+                        <div class="text-center mt-6">
+                            <button id="save-log-button" class="px-6 py-2 bg-teal-600 text-white rounded-lg shadow-lg hover:bg-teal-700 transition">Guardar Registro</button>
+                        </div>
+                        <div id="log-history" class="mt-8">
+                            <h3 class="text-xl font-bold text-teal-800 mb-4">Historial de Registros de ${dayData.dayName}</h3>
+                            <div id="log-history-list" class="space-y-4"></div>
+                        </div>
+                        `}
+                    </div>
+                    <div class="space-y-8">
+                        <div class="bg-white p-6 rounded-xl shadow-md">
+                            <h3 class="text-xl font-bold text-center mb-4 text-teal-800">Progreso Semanal</h3>
+                            <div class="chart-container">
+                                <canvas id="progressChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-md">
+                            <h3 class="text-xl font-bold text-teal-800 mb-4">Consideraciones</h3>
+                            <ul class="space-y-3 text-stone-700">
+                                <li class="flex items-start"><span class="mr-2 text-teal-600">⏱️</span> <div><b>Descanso:</b> 60-90 segundos entre series.</div></li>
+                                <li class="flex items-start"><span class="mr-2 text-teal-600">🏋️</span> <div><b>Repeticiones:</b> 8-12 para hipertrofia.</div></li>
+                                <li class="flex items-start"><span class="mr-2 text-teal-600">🔥</span> <div><b>Core:</b> Realizar al final de cada sesión de entrenamiento.</div></li>
+                            </ul>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-md text-center">
+                            <h3 class="text-xl font-bold text-teal-800 mb-4">Idea de Comida con IA</h3>
+                            <p class="text-sm text-stone-600">Genera una receta rica en proteínas para tus objetivos.</p>
+                            <button id="meal-gen-button" class="mt-4 px-6 py-2 bg-teal-600 text-white rounded-lg shadow-lg hover:bg-teal-700 transition">Generar Comida ✨</button>
+                            <div id="meal-output"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            workoutDisplay.innerHTML = cardHTML;
+            setupExerciseListeners();
+            document.getElementById('meal-gen-button').addEventListener('click', generateMealIdea);
+            document.getElementById('edit-plan-btn').addEventListener('click', () => displayEditPlan(dayId));
+
+            if (!dayData.isRestDay) {
+                const saveButton = document.getElementById('save-log-button');
+                saveButton.addEventListener('click', () => {
+                    const exerciseData = Object.values(dayData.exercises).map((ex, index) => {
+                        const reps = document.getElementById(`reps-${index}`).value;
+                        const weight = document.getElementById(`weight-${index}`).value;
+                        return { name: ex.name, sets: ex.sets, reps: reps, weight: weight };
+                    });
+                    saveWorkoutLog(dayId, exerciseData);
+                });
+            }
+
+            if (db && userId) {
+                const logsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/workout_logs`);
+                const q = query(logsCollectionRef);
+                const loggedDays = new Set();
+                onSnapshot(q, (querySnapshot) => {
+                    loggedDays.clear();
+                    allLogs = [];
+                    const logsForCurrentDay = [];
+                    querySnapshot.forEach((doc) => {
+                        const logData = doc.data();
+                        allLogs.push({...logData, id: doc.id});
+                        loggedDays.add(logData.dayId);
+                        if (logData.dayId == dayId && logData.date) {
+                             logsForCurrentDay.push({...logData, id: doc.id});
+                        }
+                    });
+                    updateChart(loggedDays);
+                    if (!trainingHistoryDisplay.classList.contains('hidden')) {
+                        renderCalendar();
+                        renderInitialHistoryDetails();
+                    }
+                    
+                    const logList = document.getElementById('log-history-list');
+                    if (logList) {
+                        logList.innerHTML = logsForCurrentDay.sort((a, b) => {
+                            if (a.date && b.date) {
+                                return b.date.toDate() - a.date.toDate();
+                            }
+                            return 0;
+                        }).map(log => {
+                            const date = log.date.toDate().toLocaleDateString("es-ES", { year: 'numeric', month: 'long', day: 'numeric' });
+                            const time = log.date.toDate().toLocaleTimeString("es-ES");
+                            const exercises = log.exercises.map(ex => `
+                                <li><b>${ex.name}:</b> ${ex.reps} reps, ${ex.weight} kg</li>
+                            `).join('');
+                            return `
+                                <div class="bg-stone-50 p-4 rounded-lg border border-stone-200 flex justify-between items-start">
+                                    <div>
+                                        <p class="text-sm font-semibold text-stone-600">${date} ${time}</p>
+                                        <ul class="list-disc list-inside text-stone-700 mt-2">
+                                            ${exercises}
+                                        </ul>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <button class="edit-date-btn text-blue-600 hover:text-blue-800 transition-colors" data-doc-id="${log.id}" aria-label="Editar fecha de registro">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="delete-log-btn text-red-600 hover:text-red-800 transition-colors" data-doc-id="${log.id}" aria-label="Eliminar registro">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                        
+                        document.querySelectorAll('.delete-log-btn').forEach(button => {
+                            button.addEventListener('click', async (e) => {
+                                const docId = e.currentTarget.dataset.docId;
+                                if (!docId) return;
+                                const logRef = doc(db, `artifacts/${appId}/users/${userId}/workout_logs`, docId);
+                                try {
+                                    await deleteDoc(logRef);
+                                } catch (error) {
+                                    console.error("Error al eliminar el registro: ", error);
+                                }
+                            });
+                        });
+                        document.querySelectorAll('.edit-date-btn').forEach(button => {
+                            button.addEventListener('click', (e) => {
+                                const docId = e.currentTarget.dataset.docId;
+                                logIdToEdit = docId;
+                                editDateModal.style.display = 'flex';
+                                const log = allLogs.find(l => l.id === docId);
+                                if (log && log.date) {
+                                    const date = log.date.toDate();
+                                    const formattedDate = date.toISOString().split('T')[0];
+                                    newDateInput.value = formattedDate;
+                                }
+                            });
+                        });
+                    }
+                });
+            }
+        }
+        
+        // Drag and drop functionality
+        let dragSrcEl = null;
+
+        function handleDragStart(e) {
+            e.target.style.opacity = '0.4';
+            dragSrcEl = e.target;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', e.target.dataset.index);
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+        
+        function handleDrop(e) {
+            e.stopPropagation();
+            if (dragSrcEl !== e.target && e.target.closest('li')) {
+                const dropTarget = e.target.closest('li');
+                const srcIndex = parseInt(dragSrcEl.dataset.index);
+                const destIndex = parseInt(dropTarget.dataset.index);
+                const dayId = document.getElementById('edit-plan-display').dataset.dayId;
+                
+                // Actualiza la copia temporal en lugar de la original
+                const exercises = [...tempWorkoutData[dayId].exercises];
+                const [draggedItem] = exercises.splice(srcIndex, 1);
+                exercises.splice(destIndex, 0, draggedItem);
+                
+                tempWorkoutData[dayId].exercises = exercises;
+                renderEditableList(dayId); // Re-render the list with the new order
+            }
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            e.target.style.opacity = '1';
+            document.querySelectorAll('.draggable-item').forEach(item => {
+                item.classList.remove('opacity-40');
+            });
+        }
+        
+        function renderEditableList(dayId) {
+            const listContainer = document.getElementById('editable-exercise-list');
+            if (!listContainer) return;
+            
+            const exercisesHTML = Object.values(tempWorkoutData[dayId].exercises).map((ex, index) => `
+                <li class="p-4 bg-stone-50 rounded-lg shadow-sm flex items-center justify-between gap-4 draggable-item" draggable="true" data-index="${index}">
+                    <div class="flex-grow">
+                        <input type="text" class="w-full text-lg font-semibold bg-transparent border-none focus:outline-none" value="${ex.name}" onchange="updateTempExercise('${dayId}', ${index}, 'name', this.value)">
+                        <div class="flex items-center space-x-2 mt-1 text-sm text-stone-600">
+                            <label>Series:</label>
+                            <input type="text" class="w-12 bg-transparent border-none focus:outline-none" value="${ex.sets}" onchange="updateTempExercise('${dayId}', ${index}, 'sets', this.value)">
+                            <label>Reps:</label>
+                            <input type="text" class="w-12 bg-transparent border-none focus:outline-none" value="${ex.reps}" onchange="updateTempExercise('${dayId}', ${index}, 'reps', this.value)">
+                        </div>
+                        <div class="flex flex-col mt-2">
+                            <label for="youtube-url-${index}" class="text-xs font-medium text-stone-500 mb-1">URL de YouTube:</label>
+                            <input type="text" id="youtube-url-${index}" class="p-1 border rounded-md text-xs" value="${ex.youtubeUrl || ''}" onchange="updateTempExercise('${dayId}', ${index}, 'youtubeUrl', this.value)">
+                        </div>
+                    </div>
+                    <button class="delete-exercise-btn text-red-600 hover:text-red-800 transition-colors" onclick="deleteTempExercise('${dayId}', ${index})">
+                         <i class="fas fa-trash-alt"></i>
+                    </button>
+                    <div class="text-stone-400 cursor-grab"><i class="fas fa-grip-lines"></i></div>
+                </li>
+            `).join('');
+            
+            listContainer.innerHTML = exercisesHTML;
+            
+            document.querySelectorAll('.draggable-item').forEach(item => {
+                item.addEventListener('dragstart', handleDragStart);
+                item.addEventListener('dragover', handleDragOver);
+                item.addEventListener('drop', handleDrop);
+                item.addEventListener('dragend', handleDragEnd);
+            });
+        }
+
+        function displayEditPlan(dayId) {
+            workoutDisplay.classList.add('hidden');
+            trainingHistoryDisplay.classList.add('hidden');
+            uploadCsvDisplay.classList.add('hidden');
+            editPlanDisplay.classList.remove('hidden');
+            editPlanDisplay.dataset.dayId = dayId;
+
+            const dayData = tempWorkoutData[dayId];
+            if (!dayData) return;
+            
+            let editContentHTML = '';
+            if (dayData.isRestDay) {
+                editContentHTML = `
+                    <div class="text-center p-8">
+                        <p class="text-lg text-stone-600 mb-4">Este día está actualmente designado como un día de descanso.</p>
+                        <p class="text-sm text-stone-500">Haz clic en "Activar Día" para convertirlo en un día de entrenamiento.</p>
+                    </div>
+                `;
+            } else {
+                editContentHTML = `
+                    <!-- Campos para editar el título y el subtítulo del día -->
+                    <div class="mb-6 space-y-4">
+                        <div class="flex flex-col">
+                            <label for="title-input" class="text-sm font-medium text-stone-700 mb-1">Título del Día:</label>
+                            <input type="text" id="title-input" class="p-2 border rounded-md text-lg font-bold" value="${dayData.title}" onchange="updateTempDayDetails('${dayId}', 'title', this.value)">
+                        </div>
+                        <div class="flex flex-col">
+                            <label for="emphasis-input" class="text-sm font-medium text-stone-700 mb-1">Subtítulo (Énfasis):</label>
+                            <input type="text" id="emphasis-input" class="p-2 border rounded-md text-sm text-stone-600" value="${dayData.emphasis}" onchange="updateTempDayDetails('${dayId}', 'emphasis', this.value)">
+                        </div>
+                    </div>
+                    <p class="text-stone-500 mb-6">Arrastra y suelta para reordenar los ejercicios.</p>
+                    <ul id="editable-exercise-list" class="space-y-4"></ul>
+                    <div class="mt-8 p-4 bg-teal-50 rounded-lg border-2 border-dashed border-teal-200">
+                        <h3 class="text-lg font-semibold text-teal-700 mb-2">Añadir Nuevo Ejercicio</h3>
+                        <div class="flex flex-col space-y-2">
+                            <input type="text" id="new-exercise-name" placeholder="Nombre" class="flex-grow p-2 border rounded-md">
+                            <div class="flex space-x-2">
+                                <input type="text" id="new-exercise-sets" placeholder="Series" class="w-16 p-2 border rounded-md">
+                                <input type="text" id="new-exercise-reps" placeholder="Reps" class="w-16 p-2 border rounded-md">
+                                <button id="add-exercise-btn" class="p-2 bg-teal-600 text-white rounded-md hover:bg-teal-700"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <input type="text" id="new-youtube-url" placeholder="URL de YouTube (opcional)" class="p-2 border rounded-md">
+                        </div>
+                    </div>
+                `;
+            }
+            
+            const editPlanHTML = `
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-teal-800">Modificar Plan para ${dayData.dayName}</h2>
+                        <div class="flex items-center space-x-2">
+                            <button id="toggle-rest-day-btn" class="px-4 py-2 text-sm ${dayData.isRestDay ? 'bg-teal-600 text-white hover:bg-teal-700' : 'bg-stone-200 text-stone-700 hover:bg-stone-300'} rounded-lg transition">
+                                ${dayData.isRestDay ? 'Activar Día' : 'Marcar como Descanso'}
+                            </button>
+                            <!-- Nuevo botón de exportar -->
+                            <button id="export-plan-btn" class="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition">Exportar Plan</button>
+                            <button id="reset-plan-btn" class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Restablecer</button>
+                            <button id="accept-plan-btn" class="px-4 py-2 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition">Aceptar</button>
+                            <button id="cancel-plan-btn" class="px-4 py-2 text-sm bg-stone-400 text-white rounded-lg hover:bg-stone-500 transition">Cancelar</button>
+                        </div>
+                    </div>
+                    ${editContentHTML}
+                    <!-- Mensaje para la exportación del plan -->
+                    <div id="plan-export-message" class="mt-4 text-center"></div>
+                </div>
+            `;
+            editPlanDisplay.innerHTML = editPlanHTML;
+            
+            // Si no es un día de descanso, renderiza la lista editable
+            if (!dayData.isRestDay) {
+                renderEditableList(dayId);
+            }
+
+            const toggleBtn = document.getElementById('toggle-rest-day-btn');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', () => toggleTempRestDay(dayId));
+            }
+            
+            if (!dayData.isRestDay) {
+                document.getElementById('add-exercise-btn').addEventListener('click', () => {
+                    const name = document.getElementById('new-exercise-name').value;
+                    const sets = document.getElementById('new-exercise-sets').value;
+                    const reps = document.getElementById('new-exercise-reps').value;
+                    const youtubeUrl = document.getElementById('new-youtube-url').value;
+                    if (name && sets && reps) {
+                        addTempExercise(dayId, { name, sets, reps, youtubeUrl });
+                        document.getElementById('new-exercise-name').value = '';
+                        document.getElementById('new-exercise-sets').value = '';
+                        document.getElementById('new-exercise-reps').value = '';
+                        document.getElementById('new-youtube-url').value = '';
+                    }
+                });
+            }
+            
+            document.getElementById('accept-plan-btn').addEventListener('click', () => savePlanChanges(dayId));
+            document.getElementById('cancel-plan-btn').addEventListener('click', () => displayWorkout(dayId));
+            document.getElementById('reset-plan-btn').addEventListener('click', () => resetPlan());
+            
+            // Listener para el nuevo botón de exportar plan
+            document.getElementById('export-plan-btn').addEventListener('click', exportPlanToCsv);
+        }
+
+        async function resetPlan() {
+             Object.assign(workoutData, initialWorkoutData);
+             Object.assign(tempWorkoutData, JSON.parse(JSON.stringify(initialWorkoutData)));
+             const planDocRef = doc(db, `artifacts/${appId}/users/${userId}/workout_plan/data`);
+             await setDoc(planDocRef, { plan: initialWorkoutData }, { merge: true });
+             initializeAppComponents();
+        }
+
+        async function savePlanChanges(dayId) {
+            const planDocRef = doc(db, `artifacts/${appId}/users/${userId}/workout_plan/data`);
+            await setDoc(planDocRef, { plan: tempWorkoutData }, { merge: true });
+            displayWorkout(dayId);
+        }
+
+        async function toggleTempRestDay(dayId) {
+            const newIsRestDay = !tempWorkoutData[dayId].isRestDay;
+            tempWorkoutData[dayId].isRestDay = newIsRestDay;
+            if (newIsRestDay) {
+                tempWorkoutData[dayId].exercises = [];
+                tempWorkoutData[dayId].title = "Descanso Completo";
+                tempWorkoutData[dayId].emphasis = "Recuperación";
+            } else {
+                tempWorkoutData[dayId].exercises = tempWorkoutData[dayId].exercises || [];
+                if (tempWorkoutData[dayId].exercises.length === 0) {
+                     tempWorkoutData[dayId].title = "Nuevo Día de Entrenamiento";
+                     tempWorkoutData[dayId].emphasis = "Personaliza tus ejercicios";
+                }
+            }
+            // Add this line to re-render the edit plan view with the updated data
+            displayEditPlan(dayId);
+        }
+
+        window.updateTempDayDetails = (dayId, field, value) => {
+            tempWorkoutData[dayId][field] = value;
+        };
+        
+        window.updateTempExercise = (dayId, index, field, value) => {
+             tempWorkoutData[dayId].exercises[index][field] = value;
+        };
+        
+        window.deleteTempExercise = (dayId, index) => {
+            tempWorkoutData[dayId].exercises.splice(index, 1);
+            renderEditableList(dayId);
+        };
+        
+        window.addTempExercise = (dayId, exercise) => {
+            tempWorkoutData[dayId].exercises.push(exercise);
+            renderEditableList(dayId);
+        };
+        
+        function initializeAppComponents() {
+            // Re-render day navigation for the plan tab
+            const dayNavigation = document.createElement('div');
+            dayNavigation.id = 'day-navigation';
+            dayNavigation.className = "flex flex-wrap justify-center gap-2 md:gap-4 mt-8";
+            Object.keys(workoutData).forEach(dayId => {
+                const day = workoutData[dayId];
+                const button = document.createElement('button');
+                button.textContent = day.dayName;
+                button.dataset.dayId = dayId;
+                button.className = `day-button py-2 px-4 rounded-lg font-semibold shadow-sm transition ${day.isRestDay ? 'bg-stone-200 text-stone-500 hover:bg-stone-300' : 'bg-white text-teal-700 hover:bg-teal-50'}`;
+                button.addEventListener('click', () => displayWorkout(dayId));
+                dayNavigation.appendChild(button);
+            });
+            
+            // Append day navigation to the workout-display div
+            if (document.getElementById('workout-display')) {
+                const navContainer = document.getElementById('workout-display').closest('.container').querySelector('nav');
+                if (navContainer) {
+                    const existingDayNav = navContainer.querySelector('#day-navigation');
+                    if (existingDayNav) {
+                        existingDayNav.remove();
+                    }
+                    navContainer.appendChild(dayNavigation);
+                }
+            }
+            
+            // Setup main tab buttons
+            document.getElementById('plan-tab-btn').addEventListener('click', () => displayTab('plan'));
+            document.getElementById('history-tab-btn').addEventListener('click', () => displayTab('history'));
+            document.getElementById('upload-tab-btn').addEventListener('click', () => displayTab('upload'));
+            
+            // Display the default tab
+            displayTab('plan');
+            
+            // Set initial day button as active
+            const initialDayBtn = document.querySelector(`#day-navigation [data-day-id="${currentDayId}"]`);
+            if (initialDayBtn) {
+                initialDayBtn.classList.add('active');
+            }
+        }
+
+        window.onload = initializeFirebase;
+    </script>
+
+</body>
+</html>
